@@ -1,29 +1,17 @@
+import streamlit as st
+import PyPDF2
 import io
 import re
-import PyPDF2
 from collections import defaultdict
-from flask import Flask, render_template, request, send_file, flash, redirect, url_for
 
-app = Flask(__name__)
-app.secret_key = "secret123"
+st.set_page_config(page_title="PDF Cropper & Sorter", page_icon="📄")
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+st.title("📄 PDF Sorter (Courier → SKU → Size → Qty)")
 
-@app.route('/upload', methods=['POST'])
-def upload():
-    if 'pdf' not in request.files:
-        flash("No file uploaded")
-        return redirect(url_for('index'))
+uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
 
-    file = request.files['pdf']
-    if file.filename == '':
-        flash("No file selected")
-        return redirect(url_for('index'))
-
-    # Read PDF directly from memory
-    reader = PyPDF2.PdfReader(file.stream)
+if uploaded_file is not None:
+    reader = PyPDF2.PdfReader(uploaded_file)
 
     # courier -> sku -> size -> qty -> [pages]
     courier_pages = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list))))
@@ -57,7 +45,7 @@ def upload():
 
         courier_pages[courier][sku][size][qty].append(page)
 
-    # Build output PDF in memory
+    # Build sorted PDF
     writer = PyPDF2.PdfWriter()
 
     for courier in ["ValmoPlus", "Valmo", "Delhivery", "XpressBees", "Others"]:
@@ -73,13 +61,10 @@ def upload():
     writer.write(output)
     output.seek(0)
 
-    # Directly return the file (never stored on disk)
-    return send_file(
-        output,
-        as_attachment=True,
-        download_name="Sorted_Output.pdf",
-        mimetype="application/pdf"
+    st.success("✅ PDF Sorted Successfully!")
+    st.download_button(
+        label="📥 Download Sorted PDF",
+        data=output,
+        file_name="Sorted_Output.pdf",
+        mime="application/pdf"
     )
-
-if __name__ == "__main__":
-    app.run()
