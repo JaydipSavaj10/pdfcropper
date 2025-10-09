@@ -1,17 +1,11 @@
-import os
-from flask import Flask, render_template, request, send_file, redirect, url_for, flash
-import PyPDF2
+import io
 import re
+import PyPDF2
 from collections import defaultdict
+from flask import Flask, render_template, request, send_file, flash, redirect, url_for
 
 app = Flask(__name__)
 app.secret_key = "secret123"
-
-UPLOAD_FOLDER = "uploads"
-OUTPUT_FOLDER = "sorted_pdfs"
-
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 @app.route('/')
 def index():
@@ -28,12 +22,10 @@ def upload():
         flash("No file selected")
         return redirect(url_for('index'))
 
-    filepath = os.path.join(UPLOAD_FOLDER, file.filename)
-    file.save(filepath)
+    # Read PDF directly from memory
+    reader = PyPDF2.PdfReader(file.stream)
 
-    reader = PyPDF2.PdfReader(filepath)
-
-    # Structure: courier -> sku -> size -> qty -> [pages]
+    # courier -> sku -> size -> qty -> [pages]
     courier_pages = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list))))
 
     for page in reader.pages:
@@ -65,7 +57,7 @@ def upload():
 
         courier_pages[courier][sku][size][qty].append(page)
 
-    # Final sorted PDF
+    # Build output PDF in memory
     writer = PyPDF2.PdfWriter()
 
     for courier in ["ValmoPlus", "Valmo", "Delhivery", "XpressBees", "Others"]:
@@ -77,11 +69,17 @@ def upload():
                     for p in courier_pages[courier][sku][size][qty]:
                         writer.add_page(p)
 
-    output_path = os.path.join(OUTPUT_FOLDER, "Sorted_Output.pdf")
-    with open(output_path, "wb") as f:
-        writer.write(f)
+    output = io.BytesIO()
+    writer.write(output)
+    output.seek(0)
 
-    return send_file(output_path, as_attachment=True)
+    # Directly return the file (never stored on disk)
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name="Sorted_Output.pdf",
+        mimetype="application/pdf"
+    )
 
 if __name__ == "__main__":
-    app.run()
+    app.run(debug=True)
