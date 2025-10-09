@@ -1,88 +1,84 @@
-import streamlit as st
+from flask import Flask, request, send_file, render_template
 import PyPDF2
 import io
 import re
-from datetime import datetime
 from collections import defaultdict
+from datetime import datetime
 
-st.set_page_config(page_title="PDF Sorter", page_icon="📄")
-st.title("📄 Advanced PDF Sorter & Merger with TAX INVOICE Control")
+app = Flask(__name__)
 
-# Options
-keep_invoice = st.checkbox("Keep Invoice", value=True)
-crop_invoice = st.checkbox("Crop Invoice / Label 4x4", value=False)
-include_tax_invoice = st.checkbox("Include TAX INVOICE", value=True)
-crop_tax_invoice = st.checkbox("Crop TAX INVOICE (Fit 4x4 label)", value=False)
-merge_files = st.checkbox("Merge Files", value=True)
-print_datetime = st.checkbox("Print Date/Time on Label", value=True)
+@app.route("/", methods=["GET", "POST"])
+def upload_pdf():
+    if request.method == "POST":
+        if "pdf_file" not in request.files:
+            return render_template("index.html", message="No file selected")
+        
+        file = request.files["pdf_file"]
+        if file.filename == "":
+            return render_template("index.html", message="No file selected")
 
-uploaded_files = st.file_uploader("Upload PDF(s)", type="pdf", accept_multiple_files=True)
+        reader = PyPDF2.PdfReader(file)
 
-if uploaded_files:
-    courier_pages = defaultdict(lambda: defaultdict(list))
+        # courier -> sku -> size -> qty -> [pages]
+        courier_pages = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list))))
 
-    for uploaded_file in uploaded_files:
-        reader = PyPDF2.PdfReader(uploaded_file)
         for page in reader.pages:
             text = page.extract_text() or ""
 
-            # Detect Courier
-            m = re.search(r"(Delivery\s*Partner|Courier)[:\s-]*([^\n\r]+)", text, re.I)
-            courier = m.group(2).strip() if m else "Others"
-            if "valmoexpress" in courier.lower():
+            # Detect courier
+            if "ValmoPlus" in text:
+                courier = "ValmoPlus"
+            elif "Valmo Pickup" in text:
                 courier = "Valmo"
+            elif "Delhivery" in text:
+                courier = "Delhivery"
+            elif "Xpress Bees" in text:
+                courier = "XpressBees"
+            else:
+                courier = "Others"
 
-            # Detect Sold By
-            sold_match = re.search(r"Sold\s*By[:\s-]*([^\n\r]+)", text, re.I)
-            sold_by = sold_match.group(1).strip() if sold_match else "UnknownSeller"
+            # Extract SKU
+            sku_match = re.search(r"Product Details\s*[\s\S]*?\n(.+?)\s+Size", text)
+            sku = sku_match.group(1).strip() if sku_match else "UnknownSKU"
 
-            is_invoice = bool(re.search(r"Invoice\b", text, re.I))
-            is_tax_invoice = bool(re.search(r"TAX\s*INVOICE", text, re.I))
+            # Extract Size
+            size_match = re.search(r"Size\s+([^\s]+)", text)
+            size = size_match.group(1).strip() if size_match else "UnknownSize"
 
-            # Decide if we skip page
-            if is_tax_invoice:
-                if not include_tax_invoice:
-                    continue  # skip tax invoice entirely
-            elif is_invoice:
-                if not keep_invoice:
-                    continue  # skip normal invoice
+            # Extract Qty
+            qty_match = re.search(r"Qty\s+(\d+)", text)
+            qty = int(qty_match.group(1)) if qty_match else 0
 
-            # Crop / label handling (simple)
-            if crop_invoice and is_invoice:
-                # here we could resize page, for now just placeholder (pdf-lib needed for exact crop)
-                pass
-            if crop_tax_invoice and is_tax_invoice:
-                pass  # same, placeholder for crop
+            courier_pages[courier][sku][size][qty].append(page)
 
-            # Add datetime watermark
-            if print_datetime:
-                watermark = datetime.now().strftime("%Y-%m-%d %H:%M")
-                try:
-                    page.add_annotation({
-                        "subtype": "/Text",
-                        "contents": watermark,
-                        "rect": [50, 750, 200, 770]
-                    })
-                except:
-                    pass  # ignore if annotation fails
+        # Build sorted PDF
+        writer = PyPDF2.PdfWriter()
+        for courier in ["ValmoPlus", "Valmo", "Delhivery", "XpressBees", "Others"]:
+            if courier not in courier_pages:
+                continue
+            for sku in sorted(courier_pages[courier].keys()):
+                for size in sorted(courier_pages[courier][sku].keys()):
+                    for qty in sorted(courier_pages[courier][sku][size].keys()):
+                        for p in courier_pages[courier][sku][size][qty]:
+                            writer.add_page(p)
 
-            courier_pages[courier][sold_by].append(page)
+        output = io.BytesIO()
+        writer.write(output)
+        output.seek(0)
 
-    # Build output PDF
-    writer = PyPDF2.PdfWriter()
-    for courier in sorted(courier_pages.keys()):
-        for seller in sorted(courier_pages[courier].keys()):
-            for p in courier_pages[courier][seller]:
-                writer.add_page(p)
+        # Unique filename with timestamp
+        now = datetime.now()
+        timestamp = now.strftime("%Y%m%d_%H%M%S")
+        filename = f"Sorted_Output_{timestamp}.pdf"
 
-    output = io.BytesIO()
-    writer.write(output)
-    output.seek(0)
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/pdf"
+        )
 
-    st.success("✅ PDF Processed & Sorted with TAX INVOICE control!")
-    st.download_button(
-        "📥 Download Final PDF",
-        data=output,
-        file_name=f"Sorted_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-        mime="application/pdf"
-    )
+    return render_template("index.html", message=None)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
