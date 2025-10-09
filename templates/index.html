@@ -2,20 +2,60 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>PDF Sorter by Courier</title>
+    <title>PDF Sorter</title>
     <style>
-        body { font-family: Arial, sans-serif; background: #f4f4f4; text-align: center; padding: 50px; }
-        form { background: #fff; padding: 20px; border-radius: 8px; display: inline-block; }
-        input[type="file"] { margin: 20px 0; }
-        button { background: #007BFF; color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 5px; }
-        button:hover { background: #0056b3; }
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: #fff;
+            padding: 40px 50px;
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+            text-align: center;
+            width: 400px;
+        }
+        h2 {
+            margin-bottom: 30px;
+            color: #333;
+        }
+        input[type="file"] {
+            margin: 20px 0;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        p.message {
+            margin-top: 15px;
+            color: red;
+        }
     </style>
 </head>
 <body>
-    <h2>Upload PDF and Sort by Courier</h2>
-    <form action="/upload" method="post" enctype="multipart/form-data">
-        <input type="file" name="pdf" accept="application/pdf" required><br>
-        <button type="submit">Upload & Sort</button>
-    </form>
+    <div class="container">
+        <h2>📄 PDF Sorter</h2>
+        {% if message %}
+            <p class="message">{{ message }}</p>
+        {% endif %}
+        <form action="/" method="post" enctype="multipart/form-data">
+            <input type="file" name="pdf_file" accept="application/pdf" required><br>
+            <button type="submit">Upload & Sort PDF</button>
+        </form>
+    </div>
 </body>
 </html>
